@@ -1,0 +1,76 @@
+{
+  "_comment": "Pins for one Alif Zephyr release. New release = copy this file and change the pins. Keep the \"python\" block one key per line: the alif-setup launcher reads it with awk.",
+  "release": "v2.4.0",
+  "platform": "linux-x86_64",
+
+  "tools": {
+    "python": {
+      "version": "3.12.15",
+      "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261003/cpython-3.12.15%2B20261003-x86_64-unknown-linux-gnu-install_only.tar.gz",
+      "sha256": "f937814031eab4698ca6d07ec606ede1825768f3f3e99af76d9db3900bee03c5",
+      "strip": 1,
+      "bin": ["bin"],
+      "check": ["bin/python3", "--version"]
+    },
+    "git": {
+      "version": "2.53.0",
+      "url": "https://github.com/desktop/dugite-native/releases/download/v2.53.0-4/dugite-native-v2.53.0-4098283-ubuntu-x64.tar.gz",
+      "sha256": "cca76aa31ad9e835e771ee7f55b73934777fbd8d16757a10d307ba06de860901",
+      "strip": 0,
+      "bin": ["bin"],
+      "check": ["bin/git", "--version"]
+    },
+    "cmake": {
+      "version": "3.31.12",
+      "url": "https://github.com/Kitware/CMake/releases/download/v3.31.12/cmake-3.31.12-linux-x86_64.tar.gz",
+      "sha256": "0dc2e9a6860f06bf10bd8fadc03e35d9eeb4df46e33763a7e480e987758f385c",
+      "strip": 1,
+      "bin": ["bin"],
+      "check": ["bin/cmake", "--version"]
+    },
+    "ninja": {
+      "version": "1.12.1",
+      "url": "https://github.com/ninja-build/ninja/releases/download/v1.12.1/ninja-linux.zip",
+      "sha256": "6f98805688d19672bd699fbbfa2c2cf0fc054ac3df1f0e6a47664d963d530255",
+      "strip": 0,
+      "bin": ["."],
+      "check": ["ninja", "--version"]
+    },
+    "gcc": {
+      "version": "14.3.rel1",
+      "url": "https://developer.arm.com/-/media/Files/downloads/gnu/14.3.rel1/binrel/arm-gnu-toolchain-14.3.rel1-x86_64-arm-none-eabi.tar.xz",
+      "sha256": "8f6903f8ceb084d9227b9ef991490413014d991874a1e34074443c2a72b14dbd",
+      "strip": 1,
+      "bin": ["bin"],
+      "check": ["bin/arm-none-eabi-gcc", "--version"]
+    }
+  },
+
+  "python_packages": {
+    "west": "1.5.0"
+  },
+
+  "sdk_alif": {
+    "url": "https://github.com/alifsemi/sdk-alif.git",
+    "revision": "v2.4.0"
+  },
+
+  "patches": [
+    {
+      "file": "patches/sdk-alif-armclang-linker.patch",
+      "project": "zephyr",
+      "why": "armclang (AC6) linker fix from Zephyr-Alif CI; harmless for GCC",
+      "required": false
+    }
+  ],
+
+  "vscode": {
+    "extensions": ["arm.keil-studio-pack"],
+    "gcc_env_var": "GCC_TOOLCHAIN_14_3_1"
+  },
+
+  "smoke_test": {
+    "app": "zephyr/samples/hello_world",
+    "board": "alif_e8_dk/ae822fa0e5597xx0/rtss_he"
+  }
+}

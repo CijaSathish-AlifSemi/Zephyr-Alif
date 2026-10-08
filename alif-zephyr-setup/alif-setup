@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+# Launcher for the Alif Zephyr installer.
+#
+# A first-time machine may have no usable Python, so this script only:
+#   1. downloads the pinned portable Python (from the manifest) into a cache,
+#   2. checks its sha256,
+#   3. runs alif_setup.py with that Python.
+# Everything else (git, cmake, ninja, compiler, SDK) is done by alif_setup.py.
+#
+# Usage: ./alif-setup install | verify | uninstall   [options]   (see --help)
+set -euo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/alif-zephyr-setup"
+
+die() { echo "ERROR: $*" >&2; exit 1; }
+
+# --- platform -------------------------------------------------------------
+[ "$(uname -s)" = "Linux" ]  || die "only Linux is supported in this version (found $(uname -s))."
+[ "$(uname -m)" = "x86_64" ] || die "only x86_64 is supported in this version (found $(uname -m))."
+
+# --- which manifest -------------------------------------------------------
+MANIFEST=""
+prev=""
+for a in "$@"; do
+    [ "$prev" = "--manifest" ] && MANIFEST="$a"
+    case "$a" in --manifest=*) MANIFEST="${a#--manifest=}" ;; esac
+    prev="$a"
+done
+if [ -z "$MANIFEST" ]; then
+    MANIFEST="$(ls "$HERE"/manifests/v*.json 2>/dev/null | sort -V | tail -1)"
+    [ -n "$MANIFEST" ] || die "no manifest found in $HERE/manifests/"
+fi
+[ -f "$MANIFEST" ] || die "manifest not found: $MANIFEST"
+
+# Read url + sha256 from the "python" block (one key per line, see manifest).
+read_py_key() {
+    awk -v key="\"$1\"" '
+        /"python"[[:space:]]*:[[:space:]]*\{/ { inblk = 1; next }
+        inblk && /\}/                       { exit }
+        inblk && index($0, key) {
+            sub(/^[^:]*:[[:space:]]*"/, ""); sub(/".*$/, ""); print; exit
+        }' "$MANIFEST"
+}
+PY_URL="$(read_py_key url)"
+PY_SHA="$(read_py_key sha256)"
+[ -n "$PY_URL" ] && [ -n "$PY_SHA" ] || die "could not read the python url/sha256 from $MANIFEST"
+
+# --- download tools needed to start ---------------------------------------
+missing=""
+for t in tar sha256sum; do command -v "$t" >/dev/null || missing="$missing $t"; done
+if command -v curl >/dev/null; then FETCH="curl -fL --retry 3 --progress-bar -o"
+elif command -v wget >/dev/null; then FETCH="wget -O"
+else missing="$missing curl"; fi
+if [ -n "$missing" ]; then
+    die "missing basic system tools:$missing
+  Install them with:  sudo apt install$missing
+  then run this command again."
+fi
+
+# --- bootstrap Python -----------------------------------------------------
+PY_DIR="$CACHE/bootstrap-python-${PY_SHA:0:12}"
+PY="$PY_DIR/bin/python3"
+if [ ! -x "$PY" ]; then
+    mkdir -p "$CACHE/downloads"
+    file="$CACHE/downloads/$(basename "$PY_URL" | sed 's/%2B/+/g')"
+    if [ ! -f "$file" ] || ! echo "$PY_SHA  $file" | sha256sum -c --status; then
+        echo "Downloading portable Python (one time, ~65 MB)..."
+        $FETCH "$file.part" "$PY_URL" || die "download failed: $PY_URL
+  Check your internet connection / proxy and try again."
+        mv "$file.part" "$file"
+    fi
+    if ! echo "$PY_SHA  $file" | sha256sum -c --status; then
+        rm -f "$file"
+        die "checksum mismatch for $file (deleted it; please run again)."
+    fi
+    rm -rf "$PY_DIR.tmp" && mkdir -p "$PY_DIR.tmp"
+    tar -xzf "$file" -C "$PY_DIR.tmp" --strip-components=1
+    rm -rf "$PY_DIR" && mv "$PY_DIR.tmp" "$PY_DIR"
+fi
+
+exec "$PY" -I "$HERE/alif_setup.py" "$@"
