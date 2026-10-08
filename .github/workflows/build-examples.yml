@@ -20,6 +20,14 @@ jobs:
       fail-fast: false
       matrix:
         solution:
+          - name: HelloWorld
+            directory: Examples/HelloWorld
+            file: helloworld-gcc.csolution.yml
+            compiler: GCC
+          - name: HelloWorld
+            directory: Examples/HelloWorld
+            file: helloworld-ac6.csolution.yml
+            compiler: AC6
           - name: IPM_ARM_MHUv2
             directory: Examples/IPM_ARM_MHUv2
             file: ipm_arm_mhuv2-gcc.csolution.yml

@@ -1,6 +1,6 @@
 # Zephyr-Alif (Work in Progress)
 
-This repository contains an example CMSIS solution that builds two basic Zephyr examples for Alif development boards.
+This repository contains an example CMSIS solution that builds three basic Zephyr examples for Alif development boards.
 It can be easily adapted to other boards or examples. It uses Zephyr's `west` build system to create the application
 image and the [Arm CMSIS Debugger](https://marketplace.visualstudio.com/items?itemName=Arm.vscode-cmsis-debugger) to
 download the image to flash memory and run it on the target hardware.
@@ -185,6 +185,7 @@ that is not selected by J26.
 
 | Example name                              | Description   |
 |---                                        |---            |
+| [HelloWorld](./Examples/HelloWorld/) | The simplest Zephyr application: prints `Hello World! <board>` on the UART console of the M55_HE core. A good first build to check that the toolchain and Zephyr environment work. Copied unchanged from [Zephyr's hello_world sample](https://github.com/zephyrproject-rtos/zephyr/tree/main/samples/hello_world). |
 | [IPM_ARM_MHUv2](./Examples/IPM_ARM_MHUv2/) | This example demonstrates dual-core debugging and inter-core communication between two Cortex-M55 cores using Arm's Message Handling Unit v2 (MHUv2). It uses Zephyr's Inter-Processor Mailbox (IPM) API to exchange messages and trigger interrupts between the cores. More details in [Alif-Zephyr-SDK/ipm_arm_mhuv2](https://github.com/alifsemi/sdk-alif/tree/v2.3.0/samples/drivers/ipm/ipm_arm_mhuv2). |
 | [LPI2C](./Examples/LPI2C/) | LPI2C (Low Power Inter-Integrated Circuit) is a low-power version of the standard I2C bus controller. This example uses two threads to emulate an I2C master and slave communicating through the LPI2C driver. All data transfers occur internally via hardware loopback. More details in [Alif-Zephyr-SDK/lpi2c](https://github.com/alifsemi/sdk-alif/tree/v2.3.0/samples/drivers/lpi2c). |
 

@@ -1,0 +1,188 @@
+# Combined solution with all examples, for use in VS Code (Manage Solution).
+# Target = board + core (E7-HE, E7-HP, E8-HE, E8-HP).
+# Target-set = which example is loaded and debugged on that core.
+solution:
+  created-for: CMSIS-Toolbox@2.15.0
+
+  packs:
+    - pack: AlifSemiconductor::Ensemble@^2.0.0-0
+
+  # List different hardware targets that are used to deploy the solution.
+  target-types:
+    - type: E7-HE
+      board: Alif Semiconductor::DevKit-E7
+      device: Alif Semiconductor::AE722F80F55D5LS:M55_HE
+      variables:
+        - west-board: alif_e7_dk/ae722f80f55d5xx/rtss_he
+        - mhu-app: ./IPM_ARM_MHUv2/rtss_he
+      west-defs:
+        - SE_SERVICES: OFF
+      target-set:
+        - set: HelloWorld
+          images:
+            - project-context: HelloWorld.Debug
+          debugger:
+            name: CMSIS-DAP@pyOCD
+            port: 3333
+            protocol: swd
+            clock: 10000000
+            start-pname: M55_HE
+        - set: LPI2C
+          images:
+            - project-context: LPI2C.Debug
+          debugger:
+            name: CMSIS-DAP@pyOCD
+            port: 3333
+            protocol: swd
+            clock: 10000000
+            start-pname: M55_HE
+        - set: MHU
+          images:
+            - project-context: MHU.Debug
+          debugger:
+            name: CMSIS-DAP@pyOCD
+            port: 3333
+            protocol: swd
+            clock: 10000000
+            start-pname: M55_HE
+
+    - type: E7-HP
+      board: Alif Semiconductor::DevKit-E7
+      device: Alif Semiconductor::AE722F80F55D5LS:M55_HP
+      variables:
+        - west-board: alif_e7_dk/ae722f80f55d5xx/rtss_hp
+        - mhu-app: ./IPM_ARM_MHUv2/rtss_hp
+      west-defs:
+        - SE_SERVICES: OFF
+      target-set:
+        - set: HelloWorld
+          images:
+            - project-context: HelloWorld.Debug
+          debugger:
+            name: CMSIS-DAP@pyOCD
+            port: 3333
+            protocol: swd
+            clock: 10000000
+            start-pname: M55_HP
+        - set: MHU
+          images:
+            - project-context: MHU.Debug
+          debugger:
+            name: CMSIS-DAP@pyOCD
+            port: 3333
+            protocol: swd
+            clock: 10000000
+            start-pname: M55_HP
+
+    - type: E8-HE
+      board: Alif Semiconductor::DevKit-E8
+      device: Alif Semiconductor::AE822FA0E5597LS0:M55_HE
+      variables:
+        - west-board: alif_e8_dk/ae822fa0e5597xx0/rtss_he
+        - mhu-app: ./IPM_ARM_MHUv2/rtss_he
+      target-set:
+        - set: HelloWorld
+          images:
+            - project-context: HelloWorld.Debug
+          debugger:
+            name: J-Link Server
+            port: 3333
+            protocol: swd
+            clock: 4000000
+            start-pname: M55_HE
+        - set: LPI2C
+          images:
+            - project-context: LPI2C.Debug
+          debugger:
+            name: J-Link Server
+            port: 3333
+            protocol: swd
+            clock: 4000000
+            start-pname: M55_HE
+        - set: MHU
+          images:
+            - project-context: MHU.Debug
+          debugger:
+            name: J-Link Server
+            port: 3333
+            protocol: swd
+            clock: 4000000
+            start-pname: M55_HE
+
+    - type: E8-HP
+      board: Alif Semiconductor::DevKit-E8
+      device: Alif Semiconductor::AE822FA0E5597LS0:M55_HP
+      variables:
+        - west-board: alif_e8_dk/ae822fa0e5597xx0/rtss_hp
+        - mhu-app: ./IPM_ARM_MHUv2/rtss_hp
+      target-set:
+        - set: HelloWorld
+          images:
+            - project-context: HelloWorld.Debug
+          debugger:
+            name: J-Link Server
+            port: 3333
+            protocol: swd
+            clock: 4000000
+            start-pname: M55_HP
+        - set: MHU
+          images:
+            - project-context: MHU.Debug
+          debugger:
+            name: J-Link Server
+            port: 3333
+            protocol: swd
+            clock: 4000000
+            start-pname: M55_HP
+
+  build-types:
+    - type: Debug
+      west-defs:
+        - CONFIG_DEBUG: y
+        - CONFIG_DEBUG_THREAD_INFO: y
+        - CONFIG_THREAD_STACK_INFO: y
+        - CONFIG_DEBUG_OPTIMIZATIONS: y
+    - type: Release
+      west-defs:
+        - CONFIG_SIZE_OPTIMIZATIONS: y
+
+  # List related projects. The core comes from the target.
+  projects:
+    - west:
+        project-id: HelloWorld
+        app-path: ./HelloWorld/hello_world
+        west-defs:
+          - CONFIG_NEWLIB_LIBC: y
+          - CONFIG_NEWLIB_LIBC_NANO: n
+    - west:
+        project-id: LPI2C
+        app-path: ./LPI2C/lpi2c
+        west-defs:
+          - CONFIG_NEWLIB_LIBC: y
+          - CONFIG_NEWLIB_LIBC_NANO: n
+      for-context:
+        - +E7-HE
+        - +E8-HE
+    # MHU has separate code per core, so one entry per core.
+    - west:
+        project-id: MHU
+        app-path: ./IPM_ARM_MHUv2/rtss_he
+        west-defs:
+          - RTSS_HP_MHU0: ON
+          - CONFIG_NEWLIB_LIBC: y
+          - CONFIG_NEWLIB_LIBC_NANO: n
+      for-context:
+        - +E7-HE
+        - +E8-HE
+    - west:
+        project-id: MHU
+        app-path: ./IPM_ARM_MHUv2/rtss_hp
+        west-defs:
+          - RTSS_HE_MHU0: ON
+          - CONFIG_NEWLIB_LIBC: y
+          - CONFIG_NEWLIB_LIBC_NANO: n
+      for-context:
+        - +E7-HP
+        - +E8-HP
+
+  compiler: GCC
