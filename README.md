@@ -163,6 +163,29 @@ In VS Code, select **Terminal > Run Task** and run:
 
 - **Alif: Install M55_HE and M55_HP debug stubs (dual core configuration)**
 
+### Program an application into MRAM
+
+To write the built application into MRAM so that it boots without a debugger, set the location of the SETOOLS
+folder in your VS Code user settings (**Preferences: Open User Settings (JSON)**):
+
+```json
+"alif.setools.root": "/path/to/app-release-exec-linux"
+```
+
+Build the solution, select the target and application in the CMSIS view, then select **Terminal > Run Task** and run
+**Alif: Program app with Security Toolkit**. Use the **(select COM port)** variant to choose the SE-UART serial port.
+The task copies the application's `zephyr.bin` and the matching `.alif/<core>_cfg.json` into the SETOOLS folder and
+runs `app-gen-toc` and `app-write-mram`.
+
+> [!NOTE]
+> SETOOLS keeps its default device in `utils/global-cfg.db` inside its own folder. If a task reports
+> "Configuration mismatch detected", answer `n`, then run `./tools-config -a` in the SETOOLS folder with the board
+> connected.
+
+> [!NOTE]
+> The application is written to the same MRAM address as the debug stub (`0x80000000` for M55_HE, `0x80200000` for
+> M55_HP) and replaces it. Run the debug stub task again before the next debug session.
+
 ## DevKit-E7 UART console
 
 The DevKit-E7 routes one application UART at a time to the second channel of the on-board USB-to-UART bridge. Connect
