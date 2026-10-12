@@ -55,15 +55,6 @@
     "revision": "v2.4.0"
   },
 
-  "patches": [
-    {
-      "file": "patches/sdk-alif-armclang-linker.patch",
-      "project": "zephyr",
-      "why": "armclang (AC6) linker fix from Zephyr-Alif CI; harmless for GCC",
-      "required": false
-    }
-  ],
-
   "vscode": {
     "extensions": ["arm.keil-studio-pack"],
     "gcc_env_var": "GCC_TOOLCHAIN_14_3_1"

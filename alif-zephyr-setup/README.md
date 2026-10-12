@@ -37,7 +37,7 @@ cd ~/alif-zephyr-setup
 ```
 
 The first run takes **15–30 minutes**, depending on network speed. The install
-runs in 8 steps:
+runs in 7 steps:
 
 | Step | What happens |
 |---|---|
@@ -45,10 +45,9 @@ runs in 8 steps:
 | 2. Install tools | Downloads Python, git, CMake, Ninja and the Arm GNU compiler, checks each checksum, unpacks into `tools/` |
 | 3. Python environment | Creates a private Python environment (`.venv`) with `west`, Zephyr's command-line tool |
 | 4. Download sdk-alif | `west` downloads the Alif SDK, Zephyr and its modules (the slowest step) |
-| 5. Apply patches | Small fixes the release needs (for example, for the Arm Compiler 6 linker) |
-| 6. Zephyr requirements | Python packages Zephyr needs to build |
-| 7. Configure VS Code | Tells the Keil Studio extension where Zephyr and the tools are, and installs the extension if needed |
-| 8. Smoke test | Builds the `hello_world` sample for the DevKit-E8 to prove everything works |
+| 5. Zephyr requirements | Python packages Zephyr needs to build |
+| 6. Configure VS Code | Tells the Keil Studio extension where Zephyr and the tools are, and installs the extension if needed |
+| 7. Smoke test | Builds the `hello_world` sample for the DevKit-E8 to prove everything works |
 
 The install is complete when **Done.** is shown.
 
@@ -199,7 +198,6 @@ Use the same `--prefix` / `--revision` for `verify` and `uninstall` as you did f
 | `no connection to github.com` | Check the network connection or proxy (`export https_proxy=http://proxy:port`), then run `install` again. |
 | `west update failed 3 times` | Network interruption. Run `install` again; it resumes where it stopped. |
 | `checksum mismatch` | The download is corrupted. Run `install` again. If the error persists, the manifest pin may be outdated; contact the maintainer. |
-| `patch ... does NOT fit this release - skipped` | Affects Arm Compiler 6 (AC6) builds only. GCC builds are not affected. |
 | `cannot read settings.json` | The VS Code settings file has a syntax error. Fix it in VS Code, or use `--no-vscode`. |
 | Build in VS Code can't find Zephyr | Run `./alif-setup verify --check-workspace <your project>`. |
 
@@ -214,7 +212,6 @@ Every command and its full output are in `~/alif-zephyr/<release>/install.log`.
 | `alif-setup` | Launcher. Downloads a portable Python, then runs `alif_setup.py` |
 | `alif_setup.py` | The installer (Python standard library only) |
 | `manifests/<release>.json` | Every version pin and checksum for one release |
-| `patches/` | Patches applied to the SDK after download |
 
 `hook_setools()` in `alif_setup.py` is a placeholder for Alif SETools (flashing), which is not part of this version.
 
@@ -224,7 +221,6 @@ Every command and its full output are in `~/alif-zephyr/<release>/install.log`.
 
 1. Copy `manifests/v2.4.0.json` to `manifests/v2.5.0.json`.
 2. Change `release`, `sdk_alif.revision` and any tool pins (`url` + `sha256`).
-3. Check that each patch in `patches/` still applies, or remove it from the list.
-4. Run `./alif-setup install` on a clean account, then `./alif-setup verify --build`.
+3. Run `./alif-setup install` on a clean account, then `./alif-setup verify --build`.
 
 The installer code does not change between releases; all versions are defined in the manifest.

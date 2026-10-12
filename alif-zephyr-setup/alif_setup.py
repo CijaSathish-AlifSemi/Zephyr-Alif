@@ -395,29 +395,6 @@ def step_sdk(ctx):
                "usually a network hiccup: run install again (it continues where it stopped).")
 
 
-def step_patches(ctx):
-    results = {}
-    for p in ctx.m.get("patches", []):
-        patch = (HERE / p["file"]).resolve()
-        repo = ctx.sdk / p["project"]
-        name = Path(p["file"]).name
-        if ctx.run(["git", "-C", repo, "apply", "--reverse", "--check", patch], check=False)[0] == 0:
-            ctx.log.say(f"    {name}: already applied")
-            results[name] = "applied"
-        elif ctx.run(["git", "-C", repo, "apply", "--check", patch], check=False)[0] == 0:
-            ctx.run(["git", "-C", repo, "apply", patch])
-            ctx.log.say(f"    {name}: applied ({p['why']})")
-            results[name] = "applied"
-        elif p.get("required"):
-            raise Fail(f"patch {name} does not fit {ctx.revision}",
-                       "the SDK changed in the place the patch edits.",
-                       "update the patch or the manifest.")
-        else:
-            ctx.log.say(f"    {name}: does NOT fit this release - skipped ({p['why']})")
-            results[name] = "skipped"
-    return results
-
-
 def step_requirements(ctx):
     req = ctx.zephyr / "scripts/requirements.txt"
     ctx.log.say(f"    pip install -r {req.relative_to(ctx.root)} (a few minutes)")
@@ -607,7 +584,6 @@ def cmd_install(ctx):
         ("Install tools (python, git, cmake, ninja, arm-none-eabi-gcc)", lambda: step_tools(ctx)),
         ("Create Python environment with west", lambda: step_venv(ctx)),
         (f"Download sdk-alif {ctx.revision} with west", lambda: step_sdk(ctx)),
-        ("Apply patches", lambda: state.__setitem__("patches", step_patches(ctx))),
         ("Install Zephyr Python requirements", lambda: step_requirements(ctx)),
         ("Configure VS Code", lambda: step_vscode(ctx, state)),
         ("Smoke test: build hello_world", lambda: state.__setitem__("smoke_test", step_smoke(ctx))),
@@ -685,12 +661,6 @@ def cmd_verify(ctx):
     check(f"sdk-alif at {ctx.revision}", rc == 0 and rc2 == 0 and head.strip() == want.strip(),
           head.strip()[:12])
     check("zephyr downloaded", (ctx.zephyr / "VERSION").exists(), str(ctx.zephyr))
-
-    for p in ctx.m.get("patches", []):
-        name = Path(p["file"]).name
-        ok = ctx.run(["git", "-C", ctx.sdk / p["project"], "apply", "--reverse", "--check",
-                      (HERE / p["file"]).resolve()], check=False)[0] == 0
-        check(f"patch {name}", ok, "" if ok else "not applied", "FAIL" if p.get("required") else "WARN")
 
     rc, out = ctx.run([py, "-c", REQ_CHECK, ctx.zephyr / "scripts/requirements.txt"], check=False) \
         if py.exists() else (1, "")
