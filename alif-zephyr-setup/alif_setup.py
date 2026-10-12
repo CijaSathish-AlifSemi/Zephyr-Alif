@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
-"""Alif Zephyr installer engine (standard library only).
+r"""Alif Zephyr installer engine (standard library only).
 
 Sets up a complete, self-contained Alif Zephyr host environment in one
 versioned folder:
 
-    ~/alif-zephyr/<release>/
+    ~/alif-zephyr/<release>/            (Windows: C:\alif-zephyr\<release>\)
         tools/      python, git, cmake, ninja, gcc   (pinned in the manifest)
         .venv/      Python environment with west + Zephyr requirements
         sdk/        west workspace (sdk-alif, zephyr, modules)
-        env.sh      "source" this to use the tools in a terminal
+        env.sh      "source" this to use the tools in a terminal (Windows: env.bat)
         install-state.json, alif-zephyr.json, install.log
 
 Nothing is taken from the system (no system Python, git, cmake...).
-Normally started through the ./alif-setup launcher, which provides Python.
+Normally started through the launcher (./alif-setup, or alif-setup.bat on
+Windows), which provides Python.
 
 Commands: install, verify, uninstall.  Run with --help for options.
 """
@@ -25,6 +26,7 @@ import json
 import os
 import platform
 import shutil
+import stat
 import subprocess
 import sys
 import tarfile
@@ -35,8 +37,6 @@ import zipfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-CACHE = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "alif-zephyr-setup"
-DEFAULT_BASE = Path.home() / "alif-zephyr"
 STATE_FILE = "install-state.json"
 PRODUCT_FILE = "alif-zephyr.json"
 TOOL_MARKER = ".alif-tool.json"
@@ -77,13 +77,34 @@ class Log:
 
 
 # --------------------------------------------------------------------------
-# OS layer (Linux only for now; add Windows/macOS classes here later)
+# OS layer (Linux and Windows; add macOS here later)
 # --------------------------------------------------------------------------
 
 class LinuxOS:
     name = "linux-x86_64"
     venv_bin = "bin"
     path_sep = ":"
+    exe = ""
+    python_rel = "bin/python3"       # python inside tools/python
+    default_path = "/usr/bin:/bin"
+    launcher = "./alif-setup"
+    env_script = "env.sh"
+
+    @staticmethod
+    def cache_dir():
+        return Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
+
+    @staticmethod
+    def default_base():
+        return Path.home() / "alif-zephyr"
+
+    @staticmethod
+    def extra_env():
+        return {}
+
+    @staticmethod
+    def long_paths_warning():
+        return None
 
     @staticmethod
     def vscode_user_settings():
@@ -114,7 +135,96 @@ class LinuxOS:
         return name, None
 
 
-OS = LinuxOS
+class WindowsOS:
+    name = "windows-x86_64"
+    venv_bin = "Scripts"
+    path_sep = ";"
+    exe = ".exe"
+    python_rel = "python.exe"        # python inside tools/python
+    default_path = ""
+    launcher = "alif-setup"
+    env_script = "env.bat"
+
+    @staticmethod
+    def cache_dir():
+        return Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
+
+    @staticmethod
+    def default_base():
+        # A short path on purpose: Zephyr has deep folders and Windows limits paths to 260 characters.
+        return Path(os.environ.get("SystemDrive", "C:") + "\\") / "alif-zephyr"
+
+    @staticmethod
+    def extra_env():
+        # Git for Windows converts line endings on checkout by default, which
+        # damages Zephyr's scripts; also allow long paths in every clone.
+        return {"GIT_CONFIG_COUNT": "2",
+                "GIT_CONFIG_KEY_0": "core.autocrlf", "GIT_CONFIG_VALUE_0": "false",
+                "GIT_CONFIG_KEY_1": "core.longpaths", "GIT_CONFIG_VALUE_1": "true"}
+
+    @staticmethod
+    def long_paths_warning():
+        try:
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
+                                r"SYSTEM\CurrentControlSet\Control\FileSystem") as k:
+                enabled = winreg.QueryValueEx(k, "LongPathsEnabled")[0]
+        except (ImportError, OSError):
+            return None
+        if enabled:
+            return None
+        return ("Windows long paths are off, so builds can fail on Zephyr's deep folders. Enable them "
+                "once from an administrator PowerShell: New-ItemProperty -Path "
+                "'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\FileSystem' -Name LongPathsEnabled "
+                "-Value 1 -PropertyType DWORD -Force")
+
+    @staticmethod
+    def vscode_user_settings():
+        appdata = os.environ.get("APPDATA") or str(Path.home() / "AppData" / "Roaming")
+        return Path(appdata) / "Code" / "User" / "settings.json"
+
+    @staticmethod
+    def check_platform():
+        if platform.system() != "Windows" or platform.machine().lower() not in ("amd64", "x86_64"):
+            raise Fail(f"unsupported platform {platform.system()} {platform.machine()}",
+                       "this version supports Windows x86_64 and Linux x86_64.")
+
+    @staticmethod
+    def distro_warning():
+        """(name, warning or None). The launcher needs tar.exe (Windows 10 1803 or newer)."""
+        name = f"Windows {platform.release()} ({platform.version()})"
+        try:
+            build = sys.getwindowsversion().build
+        except AttributeError:
+            return name, None
+        if build < 17134:
+            return name, "Windows 10 version 1803 or newer is required; this version is older and may not work."
+        return name, None
+
+
+OS = WindowsOS if platform.system() == "Windows" else LinuxOS
+CACHE = OS.cache_dir() / "alif-zephyr-setup"
+DEFAULT_BASE = OS.default_base()
+
+
+def rmtree_force(path, ignore_errors=False):
+    """shutil.rmtree that also removes read-only files (git objects are read-only on Windows)."""
+    path = Path(path)
+    if not path.exists():
+        return
+
+    def handler(func, p, exc):
+        try:
+            os.chmod(p, stat.S_IWRITE)
+            func(p)
+        except OSError:
+            if not ignore_errors:
+                raise
+
+    if sys.version_info >= (3, 12):
+        shutil.rmtree(path, onexc=handler)
+    else:
+        shutil.rmtree(path, onerror=lambda f, p, e: handler(f, p, e[1]))
 
 
 # --------------------------------------------------------------------------
@@ -125,9 +235,12 @@ class Ctx:
     def __init__(self, args):
         self.args = args
         self.manifest_path = Path(args.manifest) if args.manifest else latest_manifest()
-        self.m = json.loads(self.manifest_path.read_text())
-        if self.m.get("platform") != OS.name:
-            raise Fail(f"manifest is for {self.m.get('platform')}, this machine is {OS.name}")
+        self.m = json.loads(self.manifest_path.read_text(encoding="utf-8"))
+        platforms = self.m.get("platforms", {})
+        if OS.name not in platforms:
+            raise Fail(f"manifest has no tools for {OS.name}",
+                       f"it covers: {', '.join(platforms) or 'nothing'}.")
+        self.tool_defs = platforms[OS.name]["tools"]
         self.revision = args.revision or self.m["sdk_alif"]["revision"]
         self.board = args.board or self.m["smoke_test"]["board"]
         self.root = Path(args.prefix).expanduser().resolve() if args.prefix \
@@ -145,13 +258,17 @@ class Ctx:
 
     def tool_bins(self):
         bins = []
-        for name, t in self.m["tools"].items():
+        for name, t in self.tool_defs.items():
             for b in t["bin"]:
                 bins.append((self.tool_dir(name) / b).resolve())
         return bins
 
+    def python_exe(self):
+        """The portable python that creates the virtual environment."""
+        return self.tool_dir("python") / OS.python_rel
+
     def venv_python(self):
-        return self.venv / OS.venv_bin / "python"
+        return self.venv / OS.venv_bin / ("python" + OS.exe)
 
     def gcc_bin(self):
         return self.tool_dir("gcc") / "bin"
@@ -162,7 +279,7 @@ class Ctx:
         for k in ("PYTHONPATH", "PYTHONHOME", "CONDA_PREFIX"):
             env.pop(k, None)
         ours = [str(self.venv / OS.venv_bin)] + [str(b) for b in self.tool_bins()]
-        env["PATH"] = OS.path_sep.join(ours + [env.get("PATH", "/usr/bin:/bin")])
+        env["PATH"] = OS.path_sep.join(ours + [env.get("PATH", OS.default_path)])
         env["VIRTUAL_ENV"] = str(self.venv)
         env["PYTHONNOUSERSITE"] = "1"
         env.update(self.git_env())
@@ -172,23 +289,26 @@ class Ctx:
         return env
 
     def git_env(self):
-        # The portable git (dugite-native) needs to be told where its parts are.
-        g = self.tool_dir("git")
-        return {
-            "GIT_EXEC_PATH": str(g / "libexec/git-core"),
-            "GIT_TEMPLATE_DIR": str(g / "share/git-core/templates"),
-            "GIT_SSL_CAINFO": str(g / "ssl/cacert.pem"),
-        }
+        """Variables the portable git needs ("env" in the manifest) plus per-OS git settings."""
+        d = str(self.tool_dir("git"))
+        out = {k: v.replace("{dir}", d)
+               for k, v in self.tool_defs.get("git", {}).get("env", {}).items()}
+        out.update(OS.extra_env())
+        return out
 
     # Running commands ----------------------------------------------------
     def run(self, cmd, *, cwd=None, check=True, env=None, show=False, next_step=""):
         """Run a command, log all output; on failure show the last lines."""
         cmd = [str(c) for c in cmd]
+        env = env or self.env()
+        if os.path.basename(cmd[0]) == cmd[0]:
+            # A bare program name: look it up in the PATH we pass (Windows would use ours).
+            cmd[0] = shutil.which(cmd[0], path=env.get("PATH")) or cmd[0]
         self.log.write(f"$ {' '.join(cmd)}" + (f"   (in {cwd})" if cwd else ""))
         tail = collections.deque(maxlen=30)
         start = last_beat = time.monotonic()
         try:
-            p = subprocess.Popen(cmd, cwd=cwd, env=env or self.env(), text=True,
+            p = subprocess.Popen(cmd, cwd=cwd, env=env, text=True,
                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                  errors="replace")
         except FileNotFoundError as e:
@@ -277,14 +397,14 @@ def download(ctx, url, sha256):
 def extract(archive, dest, strip):
     """Extract archive into dest, removing `strip` leading folders (0 or 1)."""
     tmp = dest.with_name(f".tmp-{dest.name}")
-    shutil.rmtree(tmp, ignore_errors=True)
+    rmtree_force(tmp, ignore_errors=True)
     tmp.mkdir(parents=True)
     if archive.name.endswith(".zip"):
         with zipfile.ZipFile(archive) as z:
             for info in z.infolist():
                 z.extract(info, tmp)
                 mode = info.external_attr >> 16  # zipfile drops permissions
-                if mode:
+                if mode and os.name != "nt":
                     os.chmod(tmp / info.filename, mode & 0o777)
     else:
         with tarfile.open(archive) as t:
@@ -296,9 +416,9 @@ def extract(archive, dest, strip):
             raise Fail(f"unexpected layout in {archive.name}",
                        "expected one top-level folder (manifest 'strip': 1).")
         src = children[0]
-    shutil.rmtree(dest, ignore_errors=True)
+    rmtree_force(dest, ignore_errors=True)
     src.replace(dest)
-    shutil.rmtree(tmp, ignore_errors=True)
+    rmtree_force(tmp, ignore_errors=True)
 
 
 # --------------------------------------------------------------------------
@@ -313,6 +433,9 @@ def step_preflight(ctx):
     ctx.log.say(f"    system         : {os_name}")
     if os_warning:
         ctx.log.say(f"    WARNING        : {os_warning} Continuing anyway.")
+    lp_warning = OS.long_paths_warning()
+    if lp_warning:
+        ctx.log.say(f"    WARNING        : {lp_warning}")
     ctx.log.say(f"    install folder : {ctx.root}")
     ctx.log.say(f"    manifest       : {ctx.manifest_path.name} (sdk-alif {ctx.revision})")
     ctx.log.say(f"    free disk      : {free_gb:.0f} GB")
@@ -330,7 +453,7 @@ def step_preflight(ctx):
 def tool_ok(ctx, name, t):
     d = ctx.tool_dir(name)
     try:
-        marker = json.loads((d / TOOL_MARKER).read_text())
+        marker = json.loads((d / TOOL_MARKER).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return False
     if marker.get("sha256") != t["sha256"]:
@@ -341,7 +464,7 @@ def tool_ok(ctx, name, t):
 
 def step_tools(ctx):
     ctx.tools.mkdir(parents=True, exist_ok=True)
-    for name, t in ctx.m["tools"].items():
+    for name, t in ctx.tool_defs.items():
         if tool_ok(ctx, name, t):
             ctx.log.say(f"    {name:7} {t['version']:10} already installed")
             continue
@@ -349,7 +472,8 @@ def step_tools(ctx):
         archive = download(ctx, t["url"], t["sha256"])
         extract(archive, ctx.tool_dir(name), t["strip"])
         (ctx.tool_dir(name) / TOOL_MARKER).write_text(json.dumps(
-            {"version": t["version"], "sha256": t["sha256"], "url": t["url"]}, indent=2))
+            {"version": t["version"], "sha256": t["sha256"], "url": t["url"]}, indent=2),
+            encoding="utf-8")
         if not tool_ok(ctx, name, t):
             raise Fail(f"{name} was installed but does not run", f"see {ctx.log.path}")
 
@@ -357,7 +481,7 @@ def step_tools(ctx):
 def step_venv(ctx):
     py = ctx.venv_python()
     if not py.exists():
-        ctx.run([ctx.tool_dir("python") / "bin/python3", "-m", "venv", ctx.venv])
+        ctx.run([ctx.python_exe(), "-m", "venv", ctx.venv])
     pins = [f"{k}=={v}" for k, v in ctx.m["python_packages"].items()]
     ctx.log.say(f"    pip install {' '.join(pins)}")
     ctx.run([py, "-m", "pip", "install", "--disable-pip-version-check", "-q", *pins])
@@ -372,7 +496,7 @@ def step_sdk(ctx):
     py = ctx.venv_python()
     if not (ctx.sdk / ".west").exists():
         ctx.log.say(f"    west init {url} @ {ctx.revision}")
-        shutil.rmtree(ctx.sdk, ignore_errors=True)
+        rmtree_force(ctx.sdk, ignore_errors=True)
         ctx.run([py, "-m", "west", "init", "-m", url, "--mr", ctx.revision, ctx.sdk])
     else:
         _, head = ctx.run(["git", "-C", manifest_repo(ctx), "rev-parse", "HEAD"])
@@ -411,17 +535,29 @@ def write_env_files(ctx):
     keys = ["PATH", "VIRTUAL_ENV", "ZEPHYR_BASE", "ZEPHYR_TOOLCHAIN_VARIANT",
             "GNUARMEMB_TOOLCHAIN_PATH", *ctx.git_env()]
     ours = OS.path_sep.join([str(ctx.venv / OS.venv_bin)] + [str(b) for b in ctx.tool_bins()])
+    done = f"Alif Zephyr {ctx.revision} environment active (west, cmake, arm-none-eabi-gcc)."
+    if OS.name.startswith("windows"):
+        q = lambda v: str(v).replace("%", "%%")  # a literal % in a batch file
+        lines = ["@echo off",
+                 f'rem Generated by alif-setup. Use:  call "{ctx.root / "env.bat"}"',
+                 f'set "PATH={q(ours)};%PATH%"']
+        lines += [f'set "{k}={q(env[k])}"' for k in keys if k != "PATH"]
+        lines.append(f"echo {done}")
+        (ctx.root / "env.bat").write_text("\r\n".join(lines) + "\r\n", encoding="utf-8", newline="")
+        return
     lines = ["# Generated by alif-setup. Use:  source " + str(ctx.root / "env.sh"),
              f'export PATH="{ours}:$PATH"']
     lines += [f'export {k}="{env[k]}"' for k in keys if k != "PATH"]
-    lines.append('echo "Alif Zephyr ' + ctx.revision + ' environment active (west, cmake, arm-none-eabi-gcc)."')
-    (ctx.root / "env.sh").write_text("\n".join(lines) + "\n")
+    lines.append(f'echo "{done}"')
+    (ctx.root / "env.sh").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def vscode_values(ctx):
-    path = OS.path_sep.join([str(ctx.venv / OS.venv_bin), str(ctx.gcc_bin()),
-                             str(ctx.tool_dir("cmake") / "bin"), str(ctx.tool_dir("ninja")),
-                             str(ctx.tool_dir("git") / "bin")])
+    dirs = [str(ctx.venv / OS.venv_bin)]
+    for name in ("gcc", "cmake", "ninja", "git"):  # the python tool is not on this PATH
+        for b in ctx.tool_defs[name]["bin"]:
+            dirs.append(str(ctx.tool_dir(name) if b == "." else ctx.tool_dir(name) / b))
+    path = OS.path_sep.join(dirs)
     return {
         "ZEPHYR_BASE": str(ctx.zephyr),
         "VIRTUAL_ENV": str(ctx.venv),
@@ -467,9 +603,9 @@ def strip_jsonc(text):
 
 
 def load_settings(path):
-    if not path.exists() or not path.read_text().strip():
+    if not path.exists() or not path.read_text(encoding="utf-8").strip():
         return {}, False
-    text = path.read_text()
+    text = path.read_text(encoding="utf-8")
     try:
         return json.loads(text), False
     except ValueError:
@@ -488,7 +624,7 @@ def save_settings(ctx, path, data):
         backup = path.with_name(f"{path.name}.alif-backup-{stamp}")
         shutil.copy2(path, backup)
         ctx.log.say(f"    backup: {backup}")
-    path.write_text(json.dumps(data, indent=4) + "\n")
+    path.write_text(json.dumps(data, indent=4) + "\n", encoding="utf-8")
 
 
 def settings_target(ctx):
@@ -544,7 +680,7 @@ def smoke_build(ctx):
     app = ctx.sdk / ctx.m["smoke_test"]["app"]
     ctx.run([ctx.venv_python(), "-m", "west", "build", "-p", "always", "-b", ctx.board,
              "-d", build, app], cwd=ctx.sdk,
-            next_step="see install.log; run './alif-setup verify' to check each part.")
+            next_step=f"see install.log; run '{OS.launcher} verify' to check each part.")
     elf = build / "zephyr" / "zephyr.elf"
     if not elf.exists():
         raise Fail("smoke test built but zephyr.elf is missing", f"looked in {elf}")
@@ -563,13 +699,13 @@ def step_smoke(ctx):
 
 def load_state(ctx):
     try:
-        return json.loads(ctx.state_path.read_text())
+        return json.loads(ctx.state_path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
 
 
 def save_state(ctx, state):
-    ctx.state_path.write_text(json.dumps(state, indent=2) + "\n")
+    ctx.state_path.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
 
 
 def cmd_install(ctx):
@@ -600,22 +736,22 @@ def cmd_install(ctx):
         hook_setools(ctx)
     finally:
         save_state(ctx, state)
-    state["components"] = {n: t["version"] for n, t in ctx.m["tools"].items()}
+    state["components"] = {n: t["version"] for n, t in ctx.tool_defs.items()}
     state["components"]["sdk-alif"] = ctx.revision
     state["complete"] = True
     state["finished"] = datetime.datetime.now().isoformat(timespec="seconds")
     save_state(ctx, state)
     (ctx.root / PRODUCT_FILE).write_text(json.dumps(
         {"product": "AlifZephyr", "version": ctx.revision,
-         "installer_manifest": ctx.manifest_path.name}, indent=4) + "\n")
+         "installer_manifest": ctx.manifest_path.name}, indent=4) + "\n", encoding="utf-8")
     ctx.log.say(f"""
 Done. Alif Zephyr {ctx.revision} is installed in {ctx.root}
 
 Next:
   * VS Code: open your project folder (e.g. ~/Zephyr-Alif), pick the board in
     the CMSIS view and press Build. Restart VS Code first if it was open.
-  * Terminal:  source {ctx.root / 'env.sh'}   then use west as usual.
-  * Health check any time:  ./alif-setup verify
+  * Terminal:  {'call' if OS.name.startswith('windows') else 'source'} {ctx.root / OS.env_script}   then use west as usual.
+  * Health check any time:  {OS.launcher} verify
 """)
 
 
@@ -638,11 +774,11 @@ def cmd_verify(ctx):
     state = load_state(ctx)
     check("install folder exists", ctx.root.is_dir(), str(ctx.root))
     check("install finished completely", state.get("complete") is True,
-          "" if state.get("complete") else "run ./alif-setup install again")
+          "" if state.get("complete") else f"run {OS.launcher} install again")
     if not ctx.root.is_dir():
         return summary(results)
 
-    for name, t in ctx.m["tools"].items():
+    for name, t in ctx.tool_defs.items():
         d = ctx.tool_dir(name)
         ok = tool_ok(ctx, name, t)
         ver = ""
@@ -793,10 +929,10 @@ def cmd_uninstall(ctx):
         except Fail as e:
             ctx.log.say(f"WARNING: could not update {path}: {e.why} - edit it by hand.")
 
-    shutil.rmtree(ctx.root)
+    rmtree_force(ctx.root)
     ctx.log.say(f"deleted {ctx.root}")
     if ctx.args.purge_cache:
-        shutil.rmtree(CACHE / "downloads", ignore_errors=True)
+        rmtree_force(CACHE / "downloads", ignore_errors=True)
         ctx.log.say(f"deleted download cache {CACHE / 'downloads'}")
     print("VS Code extensions were left installed (other projects may use them).")
     return 0
@@ -809,7 +945,7 @@ def cmd_uninstall(ctx):
 def main():
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--manifest", help="manifest file (default: newest in manifests/)")
-    common.add_argument("--prefix", help="install folder (default: ~/alif-zephyr/<release>)")
+    common.add_argument("--prefix", help=f"install folder (default: {DEFAULT_BASE / '<release>'})")
     common.add_argument("--revision", help="override the sdk-alif revision from the manifest")
     common.add_argument("--board", help="override the smoke-test board")
     common.add_argument("--workspace", help="write VS Code settings into this folder's .vscode/ "
@@ -828,6 +964,9 @@ def main():
     p.add_argument("--yes", action="store_true", help="do not ask for confirmation")
     p.add_argument("--purge-cache", action="store_true", help="also delete downloaded archives")
     args = ap.parse_args()
+    if hasattr(sys.stdout, "reconfigure"):  # a Windows console may not be UTF-8
+        sys.stdout.reconfigure(errors="replace")
+        sys.stderr.reconfigure(errors="replace")
 
     ctx = None
     try:

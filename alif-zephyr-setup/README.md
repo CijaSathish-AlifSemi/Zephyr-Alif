@@ -7,10 +7,20 @@ needs to be installed on the system beforehand.
 
 After installation, open a project in VS Code, select a board and select **Build**.
 
+Linux:
+
 ```bash
 ./alif-setup install      # install or repair (safe to repeat)
 ./alif-setup verify       # health check, changes nothing
 ./alif-setup uninstall    # remove the install, restore VS Code settings
+```
+
+Windows (`cmd.exe`; in PowerShell use `.\alif-setup.bat` instead of `alif-setup`):
+
+```bat
+alif-setup install
+alif-setup verify
+alif-setup uninstall
 ```
 
 ---
@@ -19,21 +29,45 @@ After installation, open a project in VS Code, select a board and select **Build
 
 | Need | Notes |
 |---|---|
-| Linux PC, 64-bit Intel/AMD (x86_64) | Ubuntu 22.04 or newer (Alif's requirement). Other Linux versions get a warning but the install continues. Windows and macOS are not supported in this version. |
+| Linux PC, 64-bit Intel/AMD (x86_64) | Ubuntu 22.04 or newer (Alif's requirement). Other Linux versions get a warning but the install continues. |
+| or Windows 10 (1803 or newer) / Windows 11, 64-bit | Uses the `tar.exe` and PowerShell that ship with Windows. macOS is not supported in this version. |
 | About 8 GB free disk space | Most of it is the Zephyr source code. |
 | Internet connection | Downloads come from GitHub and developer.arm.com. A proxy works if `https_proxy` is set. |
-| `curl` (or `wget`) and `tar` | Included in most Linux installations. Otherwise: `sudo apt install curl tar` |
+| Linux: `curl` (or `wget`) and `tar` | Included in most Linux installations. Otherwise: `sudo apt install curl tar` |
 | VS Code | Not required for the install; required to build from the IDE. |
 
-You do **not** need admin rights (`sudo`). Everything goes into your home folder.
+You do **not** need admin rights (`sudo`). On Linux everything goes into your
+home folder; on Windows into `C:\alif-zephyr`, a short path on purpose.
+
+> **Windows status.** The Windows installer has not yet been verified on a
+> physical machine. If a step fails, `install.log` in the install folder holds
+> every command and its output.
+
+**Windows long paths.** Zephyr has deeply nested folders, and Windows limits
+paths to 260 characters unless long paths are enabled. The installer checks
+this and prints the one-time command if it is off. Run it from an
+administrator PowerShell:
+
+```powershell
+New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" -Name LongPathsEnabled -Value 1 -PropertyType DWORD -Force
+```
 
 ---
 
 ## 2. Install
 
+Linux:
+
 ```bash
 cd ~/alif-zephyr-setup
 ./alif-setup install
+```
+
+Windows (`cmd.exe`):
+
+```bat
+cd C:\path\to\alif-zephyr-setup
+alif-setup install
 ```
 
 The first run takes **15–30 minutes**, depending on network speed. The install
@@ -41,7 +75,7 @@ runs in 7 steps:
 
 | Step | What happens |
 |---|---|
-| 1. Check this machine | Disk space, internet, Linux version |
+| 1. Check this machine | Disk space, internet, operating system version (and Windows long paths) |
 | 2. Install tools | Downloads Python, git, CMake, Ninja and the Arm GNU compiler, checks each checksum, unpacks into `tools/` |
 | 3. Python environment | Creates a private Python environment (`.venv`) with `west`, Zephyr's command-line tool |
 | 4. Download sdk-alif | `west` downloads the Alif SDK, Zephyr and its modules (the slowest step) |
@@ -52,14 +86,17 @@ runs in 7 steps:
 The install is complete when **Done.** is shown.
 
 **If a step fails**, the message states what failed, why, and the next action.
-Most failures are caused by network interruptions. Run `./alif-setup install`
-again; completed steps are skipped and the install resumes.
+Most failures are caused by network interruptions. Run `install` again;
+completed steps are skipped and the install resumes.
 
 ---
 
 ## 3. Where things are
 
 Everything for one release lives in one folder:
+
+On Windows the folder is `C:\alif-zephyr\v2.4.0\`, with `env.bat` instead
+of `env.sh`.
 
 ```
 ~/alif-zephyr/v2.4.0/
@@ -87,8 +124,9 @@ compiler. Two optional extras are used only if your PC already has them: the
 compiler. Zephyr runs `dtc` only for extra devicetree checks; without it, builds
 work the same.
 
-Downloads are cached in `~/.cache/alif-zephyr-setup/downloads/`, so a
-reinstall does not download them again.
+Downloads are cached in `~/.cache/alif-zephyr-setup/downloads/` (Windows:
+`%LOCALAPPDATA%\alif-zephyr-setup\downloads\`), so a reinstall does not
+download them again.
 
 A new release (for example v2.5.0) installs **next to** this one in
 `~/alif-zephyr/v2.5.0/`. Installed releases are independent of each other.
@@ -110,16 +148,17 @@ nothing to type:
 "cmsis-csolution.environmentVariables": {
     "ZEPHYR_BASE": "~/alif-zephyr/v2.4.0/sdk/zephyr",
     "VIRTUAL_ENV": "~/alif-zephyr/v2.4.0/.venv",
-    "PATH": "<.venv/bin>:<tools/gcc/bin>:<tools/cmake/bin>:<tools/ninja>:<tools/git/bin>",
+    "PATH": "<.venv/bin>:<tools/gcc/bin>:<tools/cmake/bin>:<tools/ninja>:<tools/git/bin>",   (Windows: Scripts, cmd, and ";" as separator)
     "GCC_TOOLCHAIN_14_3_1": "~/alif-zephyr/v2.4.0/tools/gcc/bin"
 }
 ```
-(In the real file these are full paths.)
+(In the real file these are full paths. The file is `~/.config/Code/User/settings.json`
+on Linux and `%APPDATA%\Code\User\settings.json` on Windows.)
 
 > **Watch out for project settings.** If a project has its own
 > `.vscode/settings.json` with `cmsis-csolution.environmentVariables`, those
 > values **win** over the installer's. Delete them from the project file, or
-> run `./alif-setup verify --check-workspace <project>` to see which ones clash.
+> run `verify --check-workspace <project>` to see which ones clash.
 
 ---
 
@@ -131,14 +170,25 @@ cd ~/alif-zephyr/v2.4.0/sdk
 west build -p always -b alif_e8_dk/ae822fa0e5597xx0/rtss_he zephyr/samples/hello_world
 ```
 
-`env.sh` only affects the terminal you run it in.
+On Windows (`cmd.exe`):
+
+```bat
+call C:\alif-zephyr\v2.4.0\env.bat
+cd C:\alif-zephyr\v2.4.0\sdk
+west build -p always -b alif_e8_dk/ae822fa0e5597xx0/rtss_he zephyr/samples/hello_world
+```
+
+`env.sh` / `env.bat` only affect the terminal you run them in. On Windows,
+`env.bat` also sets `core.autocrlf=false` and `core.longpaths=true` for git in
+that terminal (through `GIT_CONFIG_*` variables), because the default
+`autocrlf=true` converts line endings in Zephyr's files.
 
 ---
 
 ## 6. Check the install: `verify`
 
 ```bash
-./alif-setup verify
+./alif-setup verify          # Windows: alif-setup verify
 ```
 
 `verify` is a **health check**. It changes nothing. It checks each part and
@@ -161,10 +211,10 @@ colleague's machine. Add `--build` to also rebuild `hello_world`.
 ## 7. Remove: `uninstall`
 
 ```bash
-./alif-setup uninstall
+./alif-setup uninstall       # Windows: alif-setup uninstall
 ```
 
-This deletes `~/alif-zephyr/v2.4.0/` and puts your VS Code setting back the way
+This deletes `~/alif-zephyr/v2.4.0/` (Windows: `C:\alif-zephyr\v2.4.0\`) and puts your VS Code setting back the way
 it was. It asks before deleting.
 
 - Your own projects are **never** touched.
@@ -179,7 +229,7 @@ it was. It asks before deleting.
 
 | Option | Use |
 |---|---|
-| `--prefix DIR` | Install somewhere other than `~/alif-zephyr/<release>` |
+| `--prefix DIR` | Install somewhere other than `~/alif-zephyr/<release>` (Windows: `C:\alif-zephyr\<release>`) |
 | `--manifest FILE` | Use a specific release file from `manifests/` (default: the newest) |
 | `--revision REV` | Try another sdk-alif tag or branch with the same tools |
 | `--board BOARD` | Use a different board for the smoke test, for example `alif_e7_dk/ae722f80f55d5xx/rtss_he` |
@@ -199,7 +249,10 @@ Use the same `--prefix` / `--revision` for `verify` and `uninstall` as you did f
 | `west update failed 3 times` | Network interruption. Run `install` again; it resumes where it stopped. |
 | `checksum mismatch` | The download is corrupted. Run `install` again. If the error persists, the manifest pin may be outdated; contact the maintainer. |
 | `cannot read settings.json` | The VS Code settings file has a syntax error. Fix it in VS Code, or use `--no-vscode`. |
-| Build in VS Code can't find Zephyr | Run `./alif-setup verify --check-workspace <your project>`. |
+| Build in VS Code can't find Zephyr | Run `verify --check-workspace <your project>`. |
+| Windows: `tar.exe not found` | Windows 10 before version 1803 has no `tar.exe`. Update Windows. |
+| Windows: `Filename too long` / paths longer than 260 characters | Enable long paths (see section 1) and install under a short folder such as the default `C:\alif-zephyr`. |
+| Windows: the install is very slow while unpacking | Antivirus scanning of the many small files. Exclude the install folder from real-time scanning if your policy allows it. |
 
 Every command and its full output are in `~/alif-zephyr/<release>/install.log`.
 
@@ -209,9 +262,10 @@ Every command and its full output are in `~/alif-zephyr/<release>/install.log`.
 
 | File | Purpose |
 |---|---|
-| `alif-setup` | Launcher. Downloads a portable Python, then runs `alif_setup.py` |
-| `alif_setup.py` | The installer (Python standard library only) |
-| `manifests/<release>.json` | Every version pin and checksum for one release |
+| `alif-setup` | Linux launcher. Downloads a portable Python, then runs `alif_setup.py` |
+| `alif-setup.bat`, `alif-setup.ps1` | Windows launcher: the same job, started from `cmd.exe` or PowerShell |
+| `alif_setup.py` | The installer (Python standard library only; Linux and Windows) |
+| `manifests/<release>.json` | Every version pin and checksum for one release, with a block per platform |
 
 `hook_setools()` in `alif_setup.py` is a placeholder for Alif SETools (flashing), which is not part of this version.
 
@@ -220,7 +274,9 @@ Every command and its full output are in `~/alif-zephyr/<release>/install.log`.
 ## 11. For maintainers: a new release
 
 1. Copy `manifests/v2.4.0.json` to `manifests/v2.5.0.json`.
-2. Change `release`, `sdk_alif.revision` and any tool pins (`url` + `sha256`).
-3. Run `./alif-setup install` on a clean account, then `./alif-setup verify --build`.
+2. Change `release`, `sdk_alif.revision` and the tool pins (`url` + `sha256`) in **each** platform block
+   (`linux-x86_64`, `windows-x86_64`). Check each archive's layout: `strip` is 1 when it has one top-level
+   folder and 0 when it has none (the Arm compiler zip for Windows has none).
+3. Run `install` on a clean account on each platform, then `verify --build`.
 
 The installer code does not change between releases; all versions are defined in the manifest.

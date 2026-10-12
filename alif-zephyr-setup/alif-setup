@@ -33,10 +33,12 @@ if [ -z "$MANIFEST" ]; then
 fi
 [ -f "$MANIFEST" ] || die "manifest not found: $MANIFEST"
 
-# Read url + sha256 from the "python" block (one key per line, see manifest).
+# Read url + sha256 from the "python" block of the linux-x86_64 platform
+# (one key per line, see manifest).
 read_py_key() {
     awk -v key="\"$1\"" '
-        /"python"[[:space:]]*:[[:space:]]*\{/ { inblk = 1; next }
+        /"linux-x86_64"[[:space:]]*:[[:space:]]*\{/ { inplat = 1 }
+        inplat && /"python"[[:space:]]*:[[:space:]]*\{/ { inblk = 1; next }
         inblk && /\}/                       { exit }
         inblk && index($0, key) {
             sub(/^[^:]*:[[:space:]]*"/, ""); sub(/".*$/, ""); print; exit
