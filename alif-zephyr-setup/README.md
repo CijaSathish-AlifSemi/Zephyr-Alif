@@ -15,7 +15,7 @@ Linux:
 ./alif-setup uninstall    # remove the install, restore VS Code settings
 ```
 
-Windows (`cmd.exe`; in PowerShell use `.\alif-setup.bat` instead of `alif-setup`):
+Windows (`cmd.exe`; in PowerShell type `.\alif-setup` instead of `alif-setup`):
 
 ```bat
 alif-setup install
@@ -250,6 +250,8 @@ Use the same `--prefix` / `--revision` for `verify` and `uninstall` as you did f
 | `checksum mismatch` | The download is corrupted. Run `install` again. If the error persists, the manifest pin may be outdated; contact the maintainer. |
 | `cannot read settings.json` | The VS Code settings file has a syntax error. Fix it in VS Code, or use `--no-vscode`. |
 | Build in VS Code can't find Zephyr | Run `verify --check-workspace <your project>`. |
+| Windows: PowerShell shows a "Security warning" and asks to run a script | You started `alif-setup-windows.ps1` directly. Start `alif-setup` (the `.bat`) instead, or run `Unblock-File .\*` once in the folder. |
+| Windows: `CERTIFICATE_VERIFY_FAILED` | Python could not verify a server certificate. The installer then retries with Windows' own downloader (`curl.exe`, then PowerShell), so this normally resolves itself; the sha256 pin still checks every file. If it still fails, a company proxy or firewall is blocking the download. |
 | Windows: `tar.exe not found` | Windows 10 before version 1803 has no `tar.exe`. Update Windows. |
 | Windows: `Filename too long` / paths longer than 260 characters | Enable long paths (see section 1) and install under a short folder such as the default `C:\alif-zephyr`. |
 | Windows: the install is very slow while unpacking | Antivirus scanning of the many small files. Exclude the install folder from real-time scanning if your policy allows it. |
@@ -263,7 +265,7 @@ Every command and its full output are in `~/alif-zephyr/<release>/install.log`.
 | File | Purpose |
 |---|---|
 | `alif-setup` | Linux launcher. Downloads a portable Python, then runs `alif_setup.py` |
-| `alif-setup.bat`, `alif-setup.ps1` | Windows launcher: the same job, started from `cmd.exe` or PowerShell |
+| `alif-setup.bat`, `alif-setup-windows.ps1` | Windows launcher: the same job, started from `cmd.exe` or PowerShell |
 | `alif_setup.py` | The installer (Python standard library only; Linux and Windows) |
 | `manifests/<release>.json` | Every version pin and checksum for one release, with a block per platform |
 

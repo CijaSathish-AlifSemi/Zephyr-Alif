@@ -353,6 +353,35 @@ def sha256_of(path):
     return h.hexdigest()
 
 
+def fetch_with_system_tls(ctx, url, dest):
+    """Windows fallback: download with curl.exe or PowerShell, which use the Windows
+    certificate store (Python's own TLS check can reject a chain Windows accepts).
+    The caller still verifies the sha256 pin, so integrity does not depend on TLS."""
+    curl = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "curl.exe"
+    attempts = []
+    if curl.exists():
+        base = [str(curl), "-L", "--fail", "-sS", "--retry", "3", "-o", str(dest), url]
+        attempts.append(("curl.exe", base))
+        # Some company networks block the certificate-revocation lookup that Schannel does.
+        attempts.append(("curl.exe without revocation check", base[:1] + ["--ssl-no-revoke"] + base[1:]))
+    ps_url, ps_dest = url.replace("'", "''"), str(dest).replace("'", "''")
+    attempts.append(("PowerShell", ["powershell.exe", "-NoProfile", "-Command",
+        "$ProgressPreference='SilentlyContinue'; [Net.ServicePointManager]::SecurityProtocol="
+        "[Net.SecurityProtocolType]::Tls12; "
+        f"Invoke-WebRequest -UseBasicParsing -Uri '{ps_url}' -OutFile '{ps_dest}'"]))
+    for label, cmd in attempts:
+        ctx.log.say(f"    downloading with {label} ...")
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, errors="replace", timeout=3600)
+        except (OSError, subprocess.SubprocessError) as e:
+            ctx.log.write(f"{label}: {e}")
+            continue
+        ctx.log.write(f"{label}: exit {r.returncode} {r.stderr.strip()[-300:]}")
+        if r.returncode == 0 and Path(dest).exists() and Path(dest).stat().st_size > 0:
+            return True
+    return False
+
+
 def download(ctx, url, sha256):
     """Download into the shared cache (reused by later installs) and verify."""
     dl = CACHE / "downloads"
@@ -368,6 +397,7 @@ def download(ctx, url, sha256):
             req = urllib.request.Request(url, headers={"User-Agent": "alif-zephyr-setup"})
             with urllib.request.urlopen(req, timeout=60) as r, open(part, "wb") as f:
                 total = int(r.headers.get("Content-Length") or 0)
+                size = f"{total >> 20} MB" if total >= 1 << 20 else f"{total >> 10} KB"
                 done, shown = 0, -10
                 while chunk := r.read(1 << 20):
                     f.write(chunk)
@@ -376,10 +406,18 @@ def download(ctx, url, sha256):
                         pct = done * 100 // total
                         if pct >= shown + 10:
                             shown = pct - pct % 10
-                            print(f"    downloading {dest.name}: {pct}% of {total >> 20} MB", flush=True)
+                            print(f"    downloading {dest.name}: {pct}% of {size}", flush=True)
             break
         except OSError as e:
             ctx.log.say(f"    download problem: {e}")
+            if OS.name.startswith("windows") and "CERTIFICATE_VERIFY_FAILED" in str(e):
+                ctx.log.say("    Python cannot verify this server's certificate; trying the Windows "
+                            "certificate store instead (the file is still checked against its sha256 pin).")
+                if fetch_with_system_tls(ctx, url, part):
+                    break
+                raise Fail(f"could not download {url}", str(e),
+                           "the Windows downloaders failed too. Open the link in a browser to test the "
+                           "network (a company proxy or firewall may block it), then run install again.")
             if attempt == 3:
                 raise Fail(f"could not download {url}", str(e),
                            "check your internet connection or proxy (https_proxy), then run install again.")
